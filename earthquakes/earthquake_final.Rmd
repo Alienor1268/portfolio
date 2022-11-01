@@ -1,0 +1,1175 @@
+---
+title: "Earthquake"
+author: "Aliénor Franck de Préaumont "
+output:
+  prettydoc::html_pretty:
+    toc: true
+    theme: architect
+    highlight: github
+
+---
+
+
+
+```{r, echo=FALSE,  message=FALSE }
+library(sf)
+library(mapview)
+library(ggplot2)
+library(readr)
+library(tidymodels)
+library(dplyr)
+```
+
+
+```{r, echo=FALSE}
+earthquake <- read.csv("./database.csv")
+```
+
+
+WOULD IT BE POSSSIBLE TO FORECAST THE MAGNITUDE OF AN EARTHQUAKE?
+
+
+INTRODUCTION
+
+
+```{r, echo=FALSE}
+
+plots_world <- st_as_sf(earthquake, coords = c("Longitude", "Latitude"),  crs = 4326)
+mapview(plots_world)
+
+```
+Earthquakes between 1965 and 2016 in the world
+
+
+
+```{r, echo=FALSE}
+EQ_map_world <- filter(earthquake, Magnitude > 8)
+plots_mag_sup <- st_as_sf(EQ_map_world, coords = c("Longitude", "Latitude"),  crs = 4326)
+mapview(plots_mag_sup)
+
+```
+Biggest earthquakes (magnitude higher than 8 on the Richter scale) between 1965 and 2016.
+
+
+As we see here on these plots, earthquakes are following the tectonic plates.The plate boundaries are made up of many fault and earthquakes occurs when there is a rapid motion along the tectonic boundaries. 
+In the Earth's crust, the faults are not moving for a long time, but due to tectonic energy the rocks on either side of a fault are sliding. The seismic waves are making the ground shaking, because underground rocks are suddenly breaking
+
+S waves, P waves,  Rayleigh and Love waves are causing the ground shaking. The P waves which are arriving first (15000 miles /per hour)are making the building vibrate. The S Waves are arriving afterwards and are damaging buildings. P and S Waves are high frequency waves; the low frequencies waves (Rayleigh and Love) are arriving last.
+
+Would it be possible to predict the magnitude of an earthquake in order to construct buildings with resistant design?
+
+
+This data set found on kaggle: https://www.kaggle.com/usgs/earthquake-database/code  can help us to find out, if we can answer this question. 
+
+We will firstly see data visualisation and try modelling with ensembles and neural networks.
+
+
+The different features are: 
+
+Date : refers to the date when the earthquake occured, we are here analysing the timeline from 1965 to 2016, Date is recorded by a seismometer. 
+
+Latitude and Longitude features refers to the geospatial coordinates of the earthquake.
+
+Type: is defining the type of shaking we are analysing. It can be: earthquake, nuclear explosion, explosion, rockburst.
+
+A rockburst is a violent expulsion of rock from the walls of a mine opening caused by heavy pressure on brittle rocks in deep mines where mining has deprived the rock of support on one side (https://www.merriam-webster.com/dictionary/rock%20burst)
+nuclear explosion: result of the rapid release of energy from a high-speed nuclear reaction (https://en.wikipedia.org/wiki/Nuclear_explosion)
+
+Depth feature: 
+there is an earthquake depth range of 0 to 700 km : between the Earth's surface and about 700 kilometers below the surface.
+
+depth error: 
+Since most earthquakes are deep within the crust, an error of +/- 1 or 2 km is irrelevant; in other words, it is a small error when the depth is something like 13 km. If the earthquake depth is relatively shallow, however, it becomes more of an issue. A negative depth can sometimes be an artifact of the poor resolution for a shallow event. (https://www.usgs.gov/faqs/what-does-it-mean-earthquake-occurred-a-depth-0-km-how-can-earthquake-have-a-negative-depth?qt-news_science_products=0#qt-news_science_products)
+
+
+depth seismic stations: reflects the deepness of the seismic stations. Seismic Stations are installed underground, like the scheme is showing below:
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '100%'}
+knitr::include_graphics("station.png")
+#http://www.usarray.org/public/about/how
+```
+
+
+Magnitude will be our output variable, Magnitude is recorded by seismometer and refers to the seismic energy released by an earthquake, It's a measure of the amplitude of the shaking waves genereated by an earthquake. 
+
+Magnitude Type feature:
+
+Since 2005 the International Association of Seismology and Physics of the Earth's Interior (IASPEI) has standardized the measurement procedures and equations for the principal magnitude scales, ML, Ms, mb, mB and mbLg
+
+According to: http://www.earthquakes.bgs.ac.uk/education/faqs/faq15.html
+ Surface wave magnitude (Ms) is based on the maximum amplitude of the surface wave having a period of 20 + 2 s. It is used for observations near the earthquake epicenter where the surface wave is larger than the body wave. This scale applies to any epicentral distance or type of seismograph.
+
+Body wave magnitude (mb) is calculated from the body waves (P,PP,S) and are usually used at larger distance from the earthquake epicentre (P-wave attenuation is less than surface waves, with distance). It can be used for any earthquake of any depth.
+
+Moment magnitude (Mw) is considered the best scale to use for larger earthquakes as the Ms saturates at about magnitude 8. Moment magnitude is measured over the broad range of frequencies present in the earthquake wave spectrum rather than the single frequency sample that the other magnitude scales use.
+
+For comparison purposes, a magnitude 5 ML earthquake is equivalent to the explosion of 1,000 tons of TNT whereas a magnitude 6 ML earthquake is the energy equivalent of 30,000 tons of TNT or a 30 kilotonne nuclear explosion. 
+
+
+Magnitude Error: is the difference between the exact value and the measurement approximation.
+Magnitude Seismic Stations: magnitude at the seismic station 
+
+azimuthal gap: 
+
+```{r , echo=FALSE, fig.cap="A caption", out.width = '100%'}
+
+knitr::include_graphics("azimuthal_gap.png")
+
+#https://www.researchgate.net/figure/Example-of-a-primary-azimuthal-gap-b-secondary-azimuthal-gap-c-real-and-optimal_fig2_315101517
+
+```
+horizontal distance: is the distance from the epicenter to the nearest station (in km).
+horizontal error: is the difference between the exact value and the measurement approximation
+ For instance, 1 m errors signify the best relative location with respect to similar events, 2 m is the next level of location quality, etc.
+ 
+root mean square: For seismic integration, RMS is a most commonly used post stack amplitude attribute, it computes the square root of the sum of squared amplitude values divided by the number of samples within the specified window.
+
+ID, Source, Source, Location Source, Magnitude Source, Status refers to Earthquake reference, the organization which recorded the earthquake, where they recorded it, which organization recorded the magnitude and how they did it. 
+We won't analyse these features. 
+
+## DATA PREPROCESSING, NORMALITY AND CORRELATION CHECK
+Analysis Y output - Magnitude
+
+```{r, echo=FALSE}
+
+earthquake %>%
+  ggplot( aes(x=Magnitude)) +
+    geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8)
+
+
+mean_magn <- mean(earthquake$Magnitude)
+median_magn <- median(earthquake$Magnitude)
+min_magn <- min(earthquake$Magnitude)
+max_magn <-  max(earthquake$Magnitude)
+
+library(gt)
+magn_tbl <- tibble(
+    mean_magn,
+    median_magn,
+    min_magn,
+    max_magn
+  ) 
+
+gt_tbl <- gt(data = magn_tbl)
+gt_tbl
+```
+
+
+We can see here the distribution curve of the ourput feature Magnitude. Magnitude is not normally distributed, we don't recongnize the well known bell shape curve. The mean is 5.88 the median is 5.7, the minimal value is 5.5 and the maximal one is 9.1. The distribution curve is symetric. 
+
+
+
+transform to factor and date
+
+```{r, echo=FALSE, results='hide' }
+
+earthquake %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+                       Type = as.factor(Type),
+                       Magnitude.Type = as.factor(Magnitude.Type)
+                       )
+
+str(earthquake)
+```
+
+ DENSITY FUNCTIONS 
+
+
+Now let's check density function of each variable. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+plot1 <- earthquake %>%
+  ggplot( aes(x=Date)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+plot1
+
+library(gridExtra)
+
+plot_lat <- earthquake %>%
+  ggplot( aes(x=Latitude)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_lon <- earthquake %>%
+  ggplot( aes(x=Longitude)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_type <- earthquake %>%
+  ggplot( aes(x=Type)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_depth <- earthquake %>%
+  ggplot( aes(x=Depth)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+
+grid.arrange(plot_lat, plot_lon,plot_type,plot_depth, nrow = 2)
+
+
+
+plot_depth_err <- earthquake %>%
+  ggplot( aes(x=Depth.Error)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_depth_station <- earthquake %>%
+  ggplot( aes(x=Depth.Seismic.Stations)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_Magnitude_type <- earthquake %>%
+  ggplot( aes(x=Magnitude.Type)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_Magnitude_Err <- earthquake %>%
+  ggplot( aes(x=Magnitude.Error)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+
+
+grid.arrange(plot_depth_err, plot_depth_station,plot_Magnitude_type,plot_Magnitude_Err, nrow = 2)
+
+
+plot_magn_station <- earthquake %>%
+  ggplot( aes(x=Magnitude.Seismic.Stations)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_azi_gap <- earthquake %>%
+  ggplot( aes(x=Azimuthal.Gap)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_horizontal_distance <- earthquake %>%
+  ggplot( aes(x=Horizontal.Distance)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_horizontal_err <- earthquake %>%
+  ggplot( aes(x=Horizontal.Error)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+grid.arrange(plot_magn_station, plot_azi_gap,plot_horizontal_distance,plot_horizontal_err, nrow = 2)
+
+
+plot_RMS <- earthquake %>%
+  ggplot( aes(x=Root.Mean.Square)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+plot_RMS
+```
+
+
+
+None of the variables has a normally distributed functions. Magnitude Error and Root Mean Square Error are closed to a normal shape curve. It will be difficult to correct the other variables in order to train models which are sensitive to the normal distribution condition.
+
+We could think about log transforming. For modeling, we can maybe use Ensembles, which are not sensitive to normal distribution condition. 
+
+
+
+
+Transform to factor and date
+
+We need to transform Date in a Date format and transform Type and Magnitude Type as factor. 
+
+```{r, echo=FALSE}
+
+EQ1 <- earthquake %>% mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+                       Type = as.factor(Type),
+                       Magnitude.Type = as.factor(Magnitude.Type)
+                       )
+
+```
+
+
+transform NA
+We need to check if there are NA values. The Naniar library can be usefull and shows us a plot with NA values for each variable.
+
+
+```{r, echo=FALSE}
+library(naniar)
+vis_miss(earthquake)
+```
+
+Here we see, that for Depth Error, Depth Seismic Stations, Magnitude Error, Magnitude Seismic Stations, Azimuthal Gap, Horizontal Distance, Horizontal Error, Root Mean Square between 68% and 98% the datas are missing... we can replace the missing data with the mean of each variable. 
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+
+ EQ2 <- EQ1 %>%
+   mutate_if(is.numeric, zoo::na.aggregate)
+```
+
+ 
+We remove time, ID, Source, Location Source, Magnitude Source, Status which seem to be irrelevant variables.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+EQ3 = select(EQ2, -2, -17:-21)
+str(EQ3)
+```
+
+
+CORRELATION
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(PerformanceAnalytics)
+mydata <- EQ3[, c(2,3,5,6,7,8,10,11,12,13,14,15)]
+chart.Correlation(mydata, histogram=TRUE, pch=19)
+#http://www.sthda.com/french/wiki/matrice-de-correlation-guide-simple-pour-analyser-formater-et-visualiser
+```
+
+
+We notice that the variables are not correlated with each other, we don't need to correct this for further analysis. 
+Magnitude Error and horizontal error have a positive correlation  with 0.5...
+
+
+
+ 
+##FURTHER DATA VISUALTIONS
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library("lattice")
+xyplot(
+  Magnitude ~ Depth, group = Type, 
+  data = EQ3, auto.key = TRUE, pch = 19, cex = 0.5
+  )
+```
+ 
+ 
+Explosion, Nuclear explosion, Rock Burst are representing a small amount of the data set. We notice only a few points for each of them... the main part is made of the earthquake category.
+
+We see no particular correlation between Depth and Magnitude: the magnitude really high for a small depth ( between 0 ans 100)
+
+The earthquake which has the highest magnitude level, has only a depth of around 40...
+The earthquake which has the the deepest level (around 700 m), has only a magnitude of 5.5. it seems that these earthquake are very deep and the Magnitude remains low. 
+
+We notice a few earthquake with a Depth of 300kms
+
+Nuclear Explosion produces magnitude levels between 5.5 and 7 but no depth ( which make sens).
+
+
+
+
+```{r, r, echo=FALSE, message=FALSE, warning=FALSE}
+
+EQ4 <-  na.omit(EQ3)
+
+
+ggplot(EQ4, aes(x = Depth, y = Magnitude))+
+  geom_point(aes(color = Magnitude.Type, shape = Magnitude.Type)) +
+  scale_shape_manual(values=seq(0,11))
+
+
+
+```
+Here we see the different types of magnitude, placed on the plot depending on their depth and on their magnitude.
+
+There are far more earthquakes from the MW type family...
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(EQ4, aes(x = Depth, y = Magnitude))+
+  geom_point(aes(color = Magnitude.Type, shape = Magnitude.Type)) +
+  scale_shape_manual(values=seq(0,11)) +
+   facet_wrap(~ Magnitude.Type)
+
+```
+
+
+MS refers to Magitude Surface Earthquake, earthquakes occurs in the highest surface of the earth's crust.
+
+ML is the local Magnitude , it refers to the Richter magnitude Scale. We see here that the observations are concentrate on the magnitude and not the depth. 
+
+MB refers to the Body Magnitude Scale. Body Waves are made up P waves (first to arrive) and S waves ( Second to arrive).
+MB only uses P waves.
+
+MW is the Moment Magnitude, it's based on an earthquake seismic moment, it measures how much an earthquake slides, it's a measure of the fault slip . This type of earthquake is more related to the energy involved in an Earthquake. It's not classified with  Magnitude and Depth. 
+
+This MW type is far more used nowadays to measure an earthquake, that's why there are much more observations with MW...
+For example the US Geological Survey uses it to report large earthquakes.
+MWB, MWC, MWR and MWW are subcategories of Moment Magnitude. 
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(plot3D)
+library(plotly)
+
+
+scatter3D(x = EQ3$Depth, 
+          y = EQ3$Magnitude, 
+          z = EQ3$Horizontal.Distance,             
+          clab = c("Horizontal Distance") 
+          ) 
+
+
+```
+
+If the seismic station is far away from the epicenter then the Depth and Magnitude are not so high. The earthquake 's measurements are probably more limited as the seismic station is far away form the epicenter.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(plot3D)
+library(plotly)
+
+
+scatter3D(x = EQ3$Magnitude, 
+          y = EQ3$Horizontal.Distance, 
+          z = EQ3$Azimuthal.Gap,             
+          clab = c("Azimuthal Gap") 
+          ) 
+
+
+```
+
+
+The azimuthal gap and the magnitude and depth are negatively correlated. We need an azimuthal gap not higher than 150°, or we get a depth and magnitude closed to 0.
+
+Time series
+
+EARTHQUAKE TYPE MOVING
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(gganimate)
+EQ_plot_Type_moving <- EQ3 %>%
+  mutate(
+  Date = as.numeric(format(EQ3$Date, "%Y")),
+  Type = as.numeric(Type)
+ 
+  )
+
+p_2 <- ggplot(
+  EQ_plot_Type_moving, 
+  aes(x = Date, y = Magnitude , colour = Magnitude.Type)
+  ) +
+  geom_point(show.legend = FALSE, alpha = 0.7) +
+  scale_color_viridis_d() +
+  scale_size(range = c(2, 12)) +
+  scale_x_log10() +
+  labs(x = "Year", y = "Magnitude")
+
+p_2 + transition_time(Type) + ggtitle('Earthquake defined per Magnitude and per Date ',
+          subtitle = 'Type: {frame_time}')
+
+```
+
+We are seeing here the different types of earthquakes which appear successively. Type 1 refers to the earthquake category, which constitute the main part. 
+
+The Type 2 is the explosion one and Type 3 the nuclear epxlosions one. The magnitude of an explosion and nuclear explosion is not so high in comparison to earthquakes, all of them happened before 1995.
+
+We notice as well that the Magnitude type as evolved ( MW, MS, ML),we can see clear differences between each colors. It can be explained by the fact that for example  Mw Type has been developed in 1977 and 1979 (Kanamori (1977) and Hanks & Kanamori (1979)).
+That's why we can't recognize before MW magnitude type.
+
+
+ 
+MAGNITUDE TYPE MOVING
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(gganimate)
+EQ_plot_Magn_Type_moving <- EQ3 %>%
+  mutate(
+  Date = as.numeric(format(EQ3$Date, "%Y")),
+  Magnitude.Type = as.numeric(Magnitude.Type)
+  )
+
+
+p__3 <- ggplot(
+  EQ_plot_Magn_Type_moving, 
+  aes(x = Date, y = Magnitude , colour = Type)
+  ) +
+  geom_point(show.legend = FALSE, alpha = 0.7) +
+  scale_color_viridis_d() +
+  scale_size(range = c(2, 12)) +
+  scale_x_log10() +
+  labs(x = "Year ", y = "Magnitude")
+
+p__3  + transition_time(Magnitude.Type) + ggtitle('Eathquake magnitude type defined per Magnitude and per year ',
+          subtitle = 'Magnitude.Type: {frame_time}')
+
+```
+
+We clearly see in green the nuclear explosion, the rest of the the observations are in black. We recognize here every distribution curve from these plot. MB, MW, MWB, MWC, MWW magnitude type have the denser distribution curve.
+It can be explained by the fact, that MW magnitude type is now a standard in classifying earthquakes. 
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(EQ4, aes(x = Depth, y = Magnitude))+
+  geom_point(aes(color = Magnitude.Type, shape = Magnitude.Type)) +
+  scale_shape_manual(values=seq(0,11)) +
+   facet_wrap(~ Magnitude.Type)
+
+```
+
+
+
+DATE MOVING 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+EQ_plot_Date_NA <- EQ3 %>%
+  mutate(
+  Date = as.numeric(format(EQ3$Date, "%Y")),
+  Type = as.numeric(Type),
+  Magnitude.Type = as.numeric(Magnitude.Type)
+  )
+
+EQ_plot_Date <- na.omit(EQ_plot_Date_NA)
+
+p_4 <- ggplot(
+  EQ_plot_Date, 
+  aes(x = Date, y = Depth , colour = Magnitude.Type)
+  ) +
+  geom_point(show.legend = TRUE, alpha = 0.7) +
+  scale_color_viridis_b (option = "magma") +
+  scale_size(range = c(2, 12)) +
+  scale_x_log10() +
+  labs( x = 'Date', y = 'Depth')
+
+
+
+p_4 + transition_time(Magnitude) + ggtitle(' Magnitude defined per Date and Depth ',
+          subtitle = 'Magnitude: {frame_time}')
+
+
+```
+
+We recognize here Magnitude Type in Colors, most of the observations are implying a magnitude between 5 and 7 on the richter scale. 
+
+We notice that the strongest earthquakes happened in the last years ( after 2000).
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+EQ_plot_8mag <- filter(EQ_plot_Date_NA , Magnitude > 8)
+
+fig <- plot_ly(EQ_plot_8mag, x = ~Date, y = ~Magnitude, z = ~Depth, 
+               color = ~Magnitude.Type, # define color on param
+               colors = c('#BF382A', '#0C4B8E'))
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'Date'),
+                     yaxis = list(title = 'Magnitude'),
+                     zaxis = list(title = 'Depth')))
+
+fig
+
+#https://jtr13.github.io/cc21/d-plot-in-r.html
+
+```
+
+
+Here we can see an extra plot done with plotly, we see the characteristics of the largest earthquakes() magnitude higher than 8 on the Richter scale) we notice that the biggest earthquakes happened after 1990.
+Before 1990, the earthquake weren't so deep and not so strong in terms of magnitude. Before 1990, the depth  was between 20 and 40, and after 1990 2 very deep earthquakes happened: 631,3 and 598,1.
+
+After 1990, the magnitude has increased significantly: in the seventies the magnitude was around at 8.2 ( max 8.7), and in 2010, the magnitude reached twice 9.1...
+
+
+
+## ANOVA
+
+
+"What Does ANOVA Do? It compares the means (of an interval-ratio dependent variable) for the groups defined by the categories of an independent variable measured at the nominal or ordinal level.
+
+ The null hypothesis is that all of the group means are equal to each other — that there are no differences. μ 1 = μ 2 = μ 3 = μ 4 etc. for however many groups there are. Rejecting the null hypothesis implies that, in at least one pair of group means, the means were different from each other. 
+
+Remember: Variances are measures of deviations from means. We are going to use variances to compare means.
+
+Is there more variability between the groups than variability within the groups? We will compute the ratio of between-groups variance to within-groups variance."
+
+
+```{r, echo=FALSE}
+summary(aov( Magnitude ~ Type, data = EQ3))
+```
+
+As the p-value is higher than the significance level 0.05, we can conclude that there is no significant difference between the groups highlighted with “*" in the model summary.
+
+
+```{r, echo=FALSE}
+summary(aov(Magnitude  ~ Magnitude.Type, data = EQ3))
+
+```
+
+As the p-value is less than the significance level 0.05, we can conclude that there are significant differences between the groups highlighted with “*" in the model summary.
+
+We need to use a Tukey test, in  order to check between which groups the differences are.
+
+```{r, echo=FALSE}
+TukeyHSD(aov(Magnitude  ~ Magnitude.Type, data = EQ3))
+
+
+```
+
+
+diff represents the  difference between means of the two groups
+lwr, upr: the lower and the upper end point of the confidence interval at 95% (default)
+p adj: p-value after adjustment for the multiple comparisons.
+
+
+For example, betweeen MS (Magnitude Surface) and MW (Magnitude Moment) the p value 0.0000018, there is a significant difference between the 2 groups.
+
+
+MODELLING WITH THE h2o library
+
+
+## ENSEMBLES
+
+
+
+We are using ensembles and trees to predict  the Magnitude because they are not sensitive to the normality condition, we have more chance to get significant results here. 
+We are using the h2o package in order to compare it to deep learning results. 
+
+It is based on generating a large number of decision trees, each constructed using a different subset of your training set. These subsets are usually selected by sampling at random and with replacement from the original data set. 
+
+
+
+```{r, message=FALSE}
+library(h2o)
+localH2O = h2o.init(ip = "localhost", port = 54321, startH2O = TRUE)
+
+```
+
+
+
+```{r}
+
+eartQ3.hex <- as.h2o(EQ3)
+
+```
+
+
+see features of the dataset
+```{r}
+h2o.describe(eartQ3.hex)
+```
+
+We just gave the dataset to the h2o package and we see here all of our variables.
+
+
+split data 80% for training test // 20% for test set
+```{r}
+splits <- h2o.splitFrame(data = eartQ3.hex,
+                         ratios = c(0.8),  #partition data into 80% and 20% chunks
+                         seed = 1234)
+train <- splits[[1]]
+test <- splits[[2]]
+
+
+```
+We split our dataset for training and then test our model. 
+
+
+
+
+create our random forest model
+
+```{r}
+rf <- h2o.randomForest(x = c("Date", "Latitude", "Longitude", "Type", "Depth", "Depth.Error", "Depth.Seismic.Stations", "Magnitude.Type", "Magnitude.Error", "Magnitude.Seismic.Stations", "Azimuthal.Gap", "Horizontal.Distance", "Horizontal.Error", "Root.Mean.Square"),
+                    y = c("Magnitude"),
+                    training_frame = train,
+                    model_id = "our.rf",
+                    seed = 1234)
+
+
+```
+
+more details about random forest model
+```{r}
+
+print(rf)
+
+```
+
+The h2o random forest model is automatically setting up a regression model.
+
+ The number of trees to be generated is here 50 ( original setup),the number of internal trees is the number of features used in the construction of each tree. 
+ 
+ 
+ The depth of the trees is 20, the maximal and the minimal depth is set up with 20
+ 
+ There are between around 3000 and 7000 leaves. 
+
+
+
+```{r}
+
+plot(rf)
+
+```
+
+
+We see here the number of trees needed to get the best rmse. After 10 trees, the RMSE is not decreasing so much. But we notice that each tree is relatively complex: they have more than 3000 leaves. Regarding Parcimony and explainabilitty the random forest perfoms well.
+
+
+
+
+model performing the test set
+
+
+```{r}
+rf_perf1 <- h2o.performance(model = rf, newdata = test)
+print(rf_perf1)
+```
+The performance of our model is improving on the test set, which seems to be a good news. It means that the model is working well, without overfitting, or other problem...
+
+
+We check the MSE and the RMSE, because they are robust metrics to outliers (for example, we noted earlier that there were 2 really strong earthquakes after 2010). It's not bad if our metrics are not sensitive to outliers. 
+
+
+
+prediction on the test set
+
+
+```{r}
+predictions <- h2o.predict(rf, test)
+print(predictions)
+
+
+```
+According this prediction the Magnitude will be between 5.5 and 6.
+
+Let's try to compare the tree model with the deep learning one. H2o allows us to train neural network in order to do a regression prediction. 
+
+
+
+
+## DEEP LEARNING MODEL
+
+We are using here Tree model and neural network, because the data has a non linear relationship. These 2 process are adapted to our dataset. 
+Neural networks allow us predictions with highly interconnected simulated "neurons". 
+
+Neural networks (also called “multilayer perceptron”) provide models of data relationships through highly interconnected, simulated “neurons” that accept inputs, apply weighting coefficients and feed their output to other “neurons” which continue the process through the network to the eventual output. Some neurons may send feedback to earlier neurons in the network. Neural networks are “trained” to deliver the desired result by an iterative (and often lengthy) process where the weights applied to each input at each neuron are adjusted to optimize the desired output.
+
+Neural networks are often compared to decision trees because both methods can model data that have nonlinear relationships between variables, and both can handle interactions between variables. 
+
+
+
+We are spliting here our dataset in a training part ( 60% of the data), a validation part (20%) and a test set (20%)
+```{r}
+splits <- h2o.splitFrame(eartQ3.hex, c(0.6,0.2), seed=1234)
+train_split  <- h2o.assign(splits[[1]], "train.hex")
+valid_split  <- h2o.assign(splits[[2]], "valid.hex") 
+test_split   <- h2o.assign(splits[[3]], "test.hex") 
+
+```
+
+
+```{r}
+
+str(train_split)
+str(valid_split)
+str(test_split)
+
+```
+
+
+
+we set Magnitude as response variable and the rest of the features as predictors. 
+
+```{r}
+
+response <- 'Magnitude'
+predictors <- setdiff(names(train_split), response)
+
+
+
+```
+
+
+deep learning: 
+Deep Learning is a branch of Machine Learning algorithms that are inspired by the functioning of the human brain and the nervous system. The input data is clamped to the input layer of the deep network. The network then uses a hierarchy of hidden layers that successively produce compact, higher level abstractions (representations) of the input data. It thus produces pseudo-features of the input features. Neural networks with 3 layers or more are considered ‘Deep’. 
+
+
+We train a first deep learning model with 5 epochs (it will work faster) and 2 hidden layers with 10 neurons each. 
+
+```{r}
+
+model_dl <- h2o.deeplearning(x = predictors,
+                          y = response,
+                          training_frame = train_split,
+                          validation_frame = test_split,
+                          hidden = c(10, 10),
+                          epochs = 5,
+                          seed = 1234)
+
+
+summary(model_dl)
+```
+
+
+
+
+
+```{r}
+
+h2o.mse(model_dl)
+h2o.rmse(model_dl)
+
+```
+
+Layer 2 and 3 refers to the 2 hidden layer with 10 neurons each. 
+we use here a rectifier activation function: 
+In the context of artificial neural networks, the rectifier or ReLU (Rectified Linear Unit) activation function is an activation function defined as the positive part of its argument. It is often a standard function uses for neural networks, used for its simplicity. 
+
+We are training here a simple model, without drop out and without regularization. 
+
+Mean rate tells us how the learning rate controls the learning problem of the model (quickly or slowly).
+
+
+
+metrics 
+
+Let's check the variable importances: 
+
+Variable impotance is difficult to compute for neural networks, H2o Deep learning is implementing the method of Gedeon and returns relative variables importances in descending order of importance. 
+
+The Gedeon method is considering, the weights connecting the input features to the first two hidden
+layers (for simplicity and speed).
+
+
+```{r}
+head(as.data.frame(h2o.varimp(model_dl)))
+
+```
+
+
+
+```{r}
+h2o.performance(model_dl)
+```
+
+
+The random forest model was performing better... we can try to tune the neural network model. The random forest model is maybe better fitting dataset.
+
+
+prediction on the validation dataset
+
+```{r}
+
+pred <- h2o.predict(model_dl, newdata = test_split)
+pred
+```
+
+
+
+
+
+
+
+
+
+
+
+extra parameters
+
+
+We can use the R function “do.call()” in order to test different parameters and analyse their consequences on the model performance.  “do.call()” allows us different combinations of arguments.
+
+
+```{r}
+
+# DEEP LEARNING TOPOLOGY TEST FUNCTION
+run_DL_test <- function(extra_params) {
+  model_test <- do.call(h2o.deeplearning, modifyList(list(x = predictors,
+                                                          y = response,
+                                                          training_frame = train_split,
+                                                          validation_frame = test_split,
+                                                          seed = 1234),
+                                                          extra_params))
+  
+  idx <- paste(names(extra_params), extra_params, sep = "=", collapse=" ")
+  
+  # Model Metrics
+  sampleshist <- model_test@model$scoring_history$samples
+  samples <- sampleshist[length(sampleshist)]
+  time <- model_test@model$run_time/1000
+  
+  training_MSE <- (tail(model_test@model$scoring_history$training_rmse, n=1))^2
+  test_MSE <- (tail(model_test@model$scoring_history$validation_rmse, n=1))^2
+  
+  # Group Results
+  c( idx, samples, sprintf("%.3f", time), sprintf("%.3f", training_MSE), 
+     sprintf("%.3f", test_MSE)
+    )
+}
+#https://www.kaggle.com/fraserpal/kaggle-titanic-disaster-data-set-and-h2o-framework/code
+
+```
+
+
+
+
+```{r}
+# EXPORT METRICS TO DF and CSV FILE FUNCTION
+build_nn_topology_test_results <- function(results, file) {
+  table <- matrix(unlist(results), ncol = 5, byrow = TRUE)
+  
+  colnames(table) <- c("idx", "Sample", "time", "Training_MSE", "Validation_MSE")
+  #write.csv(table, file.path(workdir,file), col.names = T, row.names=F, quote=T, sep=",")
+  return(as.data.frame(table))
+
+}
+
+
+```
+
+
+
+
+```{r}
+
+
+# DEEP LEARNING TOPOLOGY TEST EXECUTION
+# Parameters
+EPOCHS = 1
+
+NN_topology_test <- list(
+list(hidden=c(32),             epochs=EPOCHS),
+list(hidden=c(128),            epochs=EPOCHS),
+list(hidden=c(256),            epochs=EPOCHS),
+list(hidden=c(512),            epochs=EPOCHS),
+list(hidden=c(32,32),          epochs=EPOCHS),
+list(hidden=c(128,128),        epochs=EPOCHS),
+list(hidden=c(256,256),        epochs=EPOCHS),
+list(hidden=c(512,512),        epochs=EPOCHS),
+list(hidden=c(32,32,32),       epochs=EPOCHS),
+list(hidden=c(128,128,128),    epochs=EPOCHS),
+list(hidden=c(256,256,256),    epochs=EPOCHS),
+list(hidden=c(512,512,512),    epochs=EPOCHS))
+
+# Execution
+nn_topology_results_df <- build_nn_topology_test_results(lapply(NN_topology_test, run_DL_test), "network_topology_test.csv")
+
+```
+
+
+
+
+
+```{r}
+nn_topology_results_df
+```
+
+After training on the training set, the best option is 2 hidden layers with 128 neurons. We get here the best training and validation MSE. 
+In this case there are 14126 samples, neurons are training relatively fast ( 0,693).
+
+
+
+```{r}
+
+library(ggplot2)
+
+p<-ggplot(data=nn_topology_results_df, aes(x= idx , y= Training_MSE)) +
+  geom_bar(stat="identity", width = .5, position = "dodge") +
+    theme_minimal() + 
+    theme(axis.text.x =  element_text(angle = 45, vjust = 1, size = 12, hjust = 1)) +
+        labs(x = NULL, y = 'MSE', fill = NULL)
+p
+
+```
+  
+We can see see here the best hidden layer combination which minimize the MSE.
+
+
+
+Early Stopping
+
+Now we run another, smaller network, and we let it stop automatically once the MSE  converges (specifically, if the moving average of length 2 does not improve by at least 1% for 2 consecutive scoring events). We also sample the validation set to 10,000 rows for faster scoring.
+```{r}
+m2 <- h2o.deeplearning(
+  model_id="dl_model_faster", 
+  training_frame=train_split, 
+  validation_frame=valid_split,
+  x=predictors,
+  y=response,
+  hidden=c(32,32,32),                 
+  epochs=10000,                      
+  score_validation_samples=1000,      
+  stopping_rounds=2,
+  stopping_metric="MSE", #
+  stopping_tolerance=0.15, 
+  seed = 1234
+)
+summary(m2)
+plot(m2)
+
+
+```
+
+
+On the validation set, the MSE is 0.139 (becausthe the neural network is stopping after MSE 0.15). 
+We get an RMSE of 0.3731 on the validation dataset. The model is working well, because we get a better performance on the  validation data set than on the training dataset.
+
+We are not applying any regularization, no drop out. the weight attached at each layer is around 0.20. It's nearly the same weight for each layer. The bias is decreasing after the training of each layer which make sens.
+
+The RMSE on the training data set is decreasing to 0.35 and then strongly increasing to 0.386 for the output layer...
+
+The validation rmse is evolving conversely, the validation rmse is increasing and then decreasing by the output layer. 
+
+The most important variables are: Magnitude Type MB, Magnitude Type MWB and Horizontal Error. 
+
+
+We can try to tune the hyperparameters in order to get a better performance.
+
+
+Tuning 
+
+hyper parameter tuning with grid search 
+
+We can use a grid with 3 hidden layers of 32 neurons each or 2 hidden layers of 64 neurons each. The dropout ratio is 0 or 0.05 and the learning rate is 0.01 or 0.02.
+
+
+```{r}
+
+hyper_params <- list(
+  hidden=list(c(32,32,32),c(64,64)),
+  input_dropout_ratio=c(0,0.05),
+  rate=c(0.01,0.02)
+)
+hyper_params
+
+```
+
+
+```{r}
+grid <- h2o.grid(
+  algorithm="deeplearning",
+  grid_id="dl_grid", 
+  training_frame=train_split,
+  validation_frame=valid_split, 
+  x=predictors, 
+  y=response,
+  epochs=10,
+  stopping_metric="MSE",
+  stopping_tolerance=0.15,        
+  stopping_rounds=2,
+  score_validation_samples=10000, 
+  score_duty_cycle=0.025,         
+  adaptive_rate=F,                
+  momentum_start=0.5,            
+  momentum_stable=0.9, 
+  momentum_ramp=1e7, 
+  l1=1e-5,
+  l2=1e-5,
+  activation=c("Rectifier"),
+  max_w2=10,                      
+  hyper_params=hyper_params, 
+  seed = 1234
+)
+
+```
+
+
+```{r}
+
+grid <- h2o.getGrid("dl_grid",sort_by="MSE",decreasing=FALSE)
+grid
+```
+
+
+
+
+
+```{r}
+
+grid@summary_table[1,]
+best_model <- h2o.getModel(grid@model_ids[[1]])
+best_model
+
+```
+
+Tuning with this grid, we get a performance of 0.39 on the validation set, which is not great. 
+The model is overfitting... the RMSE on the training is smaller with (0.38).  The model is learning too well the training set. 
+
+
+The best model is the one  with 2 hidden layers of 64 neurons each, the best learning is 0.01.
+
+
+
+Random search 
+
+We can try the random search, it will naybe give us better results. We are using here"max models" , parameters are drawn randomly. It can be effective because we have more than 4 parameters to tune. 
+
+
+
+```{r}
+hyper_params <- list(
+  activation=c("Rectifier","Tanh","Maxout","RectifierWithDropout","TanhWithDropout","MaxoutWithDropout"),
+  hidden=list(c(20,20),c(50,50),c(30,30,30),c(25,25,25,25)),
+  input_dropout_ratio=c(0,0.05),
+  l1=seq(0,1e-4,1e-6),
+  l2=seq(0,1e-4,1e-6)
+)
+hyper_params
+
+
+search_criteria = list(strategy = "RandomDiscrete", max_runtime_secs = 360, max_models = 100, seed=1234567, stopping_rounds=5, stopping_tolerance=1e-2)
+dl_random_grid <- h2o.grid(
+  algorithm="deeplearning",
+  grid_id = "dl_grid_random",
+  training_frame=train_split,
+  validation_frame=valid_split, 
+  x=predictors, 
+  y=response,
+  epochs=1,
+  stopping_metric="MSE",
+  stopping_tolerance=0.15,       
+  stopping_rounds=2,
+  score_validation_samples=1000, 
+  score_duty_cycle=0.025,         
+  max_w2=10,                      
+  hyper_params = hyper_params,
+  search_criteria = search_criteria
+)                                
+grid <- h2o.getGrid("dl_grid_random",sort_by="MSE",decreasing=FALSE)
+grid
+
+grid@summary_table[1,]
+best_model <- h2o.getModel(grid@model_ids[[1]]) ## model with lowest logloss
+best_model
+
+
+```
+
+
+We are getting here better results with the random search, which make sens, because we are trying more combinations defined in a specific space . However the random search takes more time complete and is more complicated than the grid search.
+
+The best model is the one with 3 layers and 30  neurons each, no drop out and a bit l1  and l2 regularization. 
+
+
+Neural Networks are not so easy understandable  ( in comparison to the tree model). Neural Networks are a kind of black box. 
+We get a result, but we don't  know exactly how the decision has been made.
+
+The random forest model is still the best on in terms of performance and parcimony. 
+
+
+Is it possible to predict the magnitude earthquake? 
+
+Like USGS is explaining (here: https://www.usgs.gov/faqs/can-you-predict-earthquakes?qt-news_science_products=0#qt-news_science_products ), it's not possible to predict earthquakes and their magnitude. A major earthquake has never been predicted by a scientist.
+However, earthquakes analysis can help developping building design in order to limit earthquakes damages and save lifes.
+
+
+Sources: 
+
+https://www.usgs.gov/faqs/can-you-predict-earthquakes?qt-news_science_products=0#qt-news_science_products
+https://www.kaggle.com/fraserpal/kaggle-titanic-disaster-data-set-and-h2o-framework/code
+
+Gedeon:
+https://arxiv.org/pdf/1805.04755.pdf
+https://docs.h2o.ai/h2o-tutorials/latest-stable/tutorials/deeplearning/index.html
+
+
+deep learning:
+https://www.kdnuggets.com/2018/01/deep-learning-h2o-using-r.html
+https://www.dtreg.com/methodology/view/decision-trees-compared-to-regression-and-neural-networks
+
+ANOVA:
+https://slidetodoc.com/anova-analysis-of-variance-the-titanic-disaster-were/
+
+VISUALISATIONS:
+https://jtr13.github.io/cc21/d-plot-in-r.html
+
+SEISMS:
+https://en.wikipedia.org/wiki/Seismic_magnitude_scales
+https://www.usgs.gov/faqs/what-does-it-mean-earthquake-occurred-a-depth-0-km-how-can-earthquake-have-a-negative-depth?qt-news_science_products=0#qt-news_science_products
+https://www.britannica.com/science/earthquake-geology/Earthquake-magnitude
+http://www.earthquakes.bgs.ac.uk/education/faqs/faq15.html
+http://www.isc.ac.uk/docs/papers/download/2002p01/
