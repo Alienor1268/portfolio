@@ -1,0 +1,576 @@
+---
+title: "Fires in Australia 01.08.2019 - 11.01.2020"
+author: "Aliénor Franck de Préaumont - 2010837068 "
+output:
+  prettydoc::html_pretty:
+    toc: true
+    theme: cayman
+
+---
+
+Data: https://www.kaggle.com/carlosparadis/fires-from-space-australia-and-new-zeland?select=fire_archive_M6_96619.csv
+
+Information regarding features: https://earthdata.nasa.gov/earth-observation-data/near-real-time/firms/c6-mcd14dl 
+
+# Features
+
+The variables we will study are:
+
+Latitude: Center of 1km fire pixel but not necessarily the actual location of the fire as one or more fires can be detected within the 1km pixel.
+
+Longitude: Center of 1km fire pixel but not necessarily the actual location of the fire as one or more fires can be detected within the 1km pixel.
+
+Brightness: Brightness temperature 21 (Kelvin): Channel 21/22 brightness temperature of the fire pixel measured in Kelvin.
+
+Scan: Along Scan pixel size: The algorithm produces 1km fire pixels but MODIS pixels get bigger toward the edge of scan. Scan and track reflect actual pixel size.
+
+track: Along Track pixel size: The algorithm produces 1km fire pixels but MODIS pixels get bigger toward the edge of scan. Scan and track reflect actual pixel size.
+
+acq_date: Acquisition Date: Date of MODIS acquisition.
+
+acq_time: Acquisition Time: Time of acquisition/overpass of the satellite (in UTC).
+
+Satellite: A = Aqua and T = Terra.
+
+Instrument: Constant value for MODIS. 
+
+Confidence (0-100%): This value is based on a collection of intermediate algorithm quantities used in the detection process. It is intended to help users gauge the quality of individual hotspot/fire pixels. Confidence estimates range between 0 and 100% and are assigned one of the three fire classes (low-confidence fire, nominal-confidence fire, or high-confidence fire).
+
+Version (Collection and source): Version identifies the collection (e.g. MODIS Collection 6) and source of data processing: Near Real-Time (NRT suffix added to collection) or Standard Processing (collection only).
+"6.0NRT" - Collection 6 NRT processing. "6.1NRT" - Collection 61 NRT processing
+"6.0" - Collection 6 Standard processing. "6.1" - Collection 61 Standard processing
+
+Brightness temperature 31 (Kelvin): Channel 31 brightness temperature of the fire pixel measured in Kelvin.
+
+Fire Radiative Power (MW - megawatts): Depicts the pixel-integrated fire radiative power in MW (megawatts).
+
+Type*
+0 = presumed vegetation fire
+1 = active volcano
+2 = other static land source
+3 = offshore
+*This attribute is only available for MCD14ML (standard quality) data 
+
+
+
+```{r, echo=FALSE,  message=FALSE }
+library(sf)
+library(mapview)
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(caret)
+
+```
+
+
+```{r, echo=FALSE}
+fire_dataset <- read.csv("./fire_archive_M6_96619.csv")
+```
+
+
+# Map of fires in Australia
+```{r, echo=FALSE}
+
+Fires_Australia <- st_as_sf(fire_dataset, coords = c("longitude", "latitude"),  crs = 4326)
+mapview(Fires_Australia)
+
+```
+
+This plot represents all the bushfires in Australia between 01.08.2019 and 11.01.2020.
+
+
+
+# Output variable
+
+```{r, echo=FALSE}
+
+fire_dataset %>%
+  ggplot( aes(x=frp)) +
+    geom_density(fill="brown3", color="brown3", alpha=0.8)
+
+
+mean_frp <- mean(fire_dataset$frp)
+median_frp <- median(fire_dataset$frp)
+min_frp <- min(fire_dataset$frp)
+max_frp <-  max(fire_dataset$frp)
+
+library(gt)
+brg_tbl <- tibble(
+    mean_frp,
+    median_frp,
+    min_frp,
+    max_frp
+  ) 
+
+gt_tbl <- gt(data = brg_tbl)
+gt_tbl
+```
+The output variable is not normally distributed, we don't recognize the well known bell shaped curve. We can see some outliers values: most of the values can be found between 0 and 250 Mw. But an outlier point has a value higher than 3500 Mw...
+
+
+# Transform as date
+
+```{r, echo=FALSE}
+
+fire <- fire_dataset %>% mutate(acq_date = as.Date(acq_date, format = "%Y-%m-%d"),
+                       satellite = as.factor(satellite),
+                       instrument = as.factor(instrument),
+                       daynight = as.factor(daynight)
+                       )
+
+```
+
+As first preprocessing step, we need to transform the feature Acq.Date as Date format and the features satellite, instrument and Daynight as factors.
+
+We notice as well a big difference between the mean and the median, which is giving a confirmation, that there is a problem with outlier points. 
+
+# No missing values
+
+```{r, echo=FALSE}
+library(naniar)
+vis_miss(fire)
+```
+There are no Na Values.
+
+
+# Correlation plot
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(PerformanceAnalytics)
+mydata <- fire[, c(-6,-8,-9, -14)]
+chart.Correlation(mydata, histogram=TRUE, pch=19)
+#http://www.sthda.com/french/wiki/matrice-de-correlation-guide-simple-pour-analyser-formater-et-visualiser
+```
+The variables scan and Track are highly correlated with 0,98.
+bright_t31 and brightness are strong correlated. 
+frp and bright_t31 are correlated to brightness.
+
+# Check for outliers
+
+```{r}
+
+box_frp <- 
+  fire %>%
+  ggplot( aes(x = "", y = frp)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_latitude <- 
+  fire %>%
+  ggplot( aes(x = "", y = latitude)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_longitude <- 
+  fire %>%
+  ggplot( aes(x = "", y = longitude)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_brightness <- 
+  fire %>%
+  ggplot( aes(x = "", y = brightness)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_scan <- 
+  fire %>%
+  ggplot( aes(x = "", y = scan)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_track <- 
+  fire %>%
+  ggplot( aes(x = "", y = track)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_acq_date <- 
+  fire %>%
+  ggplot( aes(x = "", y = acq_date)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_acq_time <- 
+  fire %>%
+  ggplot( aes(x = "", y = acq_time)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_acq_date <- 
+  fire %>%
+  ggplot( aes(x = "", y = acq_date)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+box_bright_t31 <- 
+  fire %>%
+  ggplot( aes(x = "", y = bright_t31)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+
+box_type <- 
+  fire %>%
+  ggplot( aes(x = "", y = type)) +
+  geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+
+
+library(gridExtra)
+grid.arrange( box_bright_t31,box_latitude, box_longitude, box_brightness, nrow = 2)
+grid.arrange( box_scan,box_track, box_acq_date, box_acq_time, nrow = 2)
+box_frp
+```
+
+Many variables have outliers, this is the case for brightness, scan and frp for example. We will need to pay attention for modelling. 
+
+
+# Plot brightness according acquisition date and depending on the day and night feature
+```{r}
+ggplot(fire, aes(x = acq_date, y = brightness))+
+  geom_point(aes(color = daynight, shape = daynight)) +
+   scale_color_manual(values=c("darkorange2", "aquamarine4"))
+  
+```
+
+We notice that the brightness is higher during the day, which makes sens. However, in the middle of September 2019, the brightness was sometimes stronger during the night.
+
+
+# Plot brightness according Acquisition Time depending on satellite and day/night features
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(fire, aes(x = acq_time, y = brightness))+
+  geom_point(aes(color = daynight, shape = daynight)) +
+   scale_color_manual(values=c("firebrick1", "darkcyan")) +
+   facet_wrap(~ satellite)
+
+```
+
+We notice the same trend as before, the brightness is higher during the day.
+
+
+# Brightness according scan categorized according satellites
+
+```{r}
+library(gganimate)
+p_1 <- ggplot(
+  fire, 
+  aes(x = scan, y = brightness , colour = satellite)
+  ) +
+  geom_point(show.legend = TRUE, alpha = 0.7) +
+  scale_color_viridis_d() +
+  scale_size(range = c(0, 1)) +
+  scale_x_log10() +
+  labs(x = "scan ", y = "brightness")
+
+p_1  + transition_time(acq_date) + ggtitle('Brightness measured by the 2 different satellites',
+          subtitle = 'acq_date: {frame_time}')
+
+```
+
+The brightness measures from Aqua seem to be higher than the one of Satellite Terra. We see the brightness evolving during August and September. 
+
+# Brightness according scan categorized by the type of fire. 
+
+```{r}
+
+ggplot(fire, aes(x = scan, y = brightness))+
+  geom_point(aes(color = daynight, shape = daynight)) +
+  scale_color_manual(values=c("brown1", "darkorchid4")) +
+   facet_wrap(~ type)
+
+```
+
+The nasa is reporting 3 types of fires: 
+0 = presumed vegetation fire
+2 = other static land source
+3 = offshore
+
+Most of the fires are vegetation fires in Australia, we notice some fires coming from "other static land source" and a few fires classified as offshore fires. ( There no vulcano fires)
+The one pixel sized fires are the fires which are the most luminous. The 3 or 4 pixel sized fired are less luminous.
+
+
+# Offshore fires
+
+```{r, echo=FALSE}
+fire_offshore <- filter(fire, type == 3)
+plots_offshore <- st_as_sf(fire_offshore, coords = c("longitude", "latitude"),  crs = 4326)
+mapview(plots_offshore)
+
+```
+This plot shows the fires classified as offshore, they are situated along the cost.
+
+
+# Fires coming from other land sources
+
+```{r, echo=FALSE}
+fire_land <- filter(fire, type == 2)
+plots_land <- st_as_sf(fire_land, coords = c("longitude", "latitude"),  crs = 4326)
+mapview(plots_land)
+
+```
+We can see on this plot the fires which are coming from "other static land source"
+
+# Frp according to track
+
+```{r}
+p_2 <- ggplot(
+  fire, 
+  aes(x = track, y = frp , colour = type)
+  ) +
+  geom_point(show.legend = TRUE, alpha = 0.7) +
+  scale_color_viridis_b (option = "magma") +
+  scale_size(range = c(0, 1)) +
+  scale_x_log10() +
+  labs( x = 'track', y = 'frp')
+
+
+
+p_2 + transition_time(brightness) + ggtitle(' frp according to track and fire type',
+          subtitle = 'brightness: {frame_time}')
+
+
+```
+
+# Frp according to brightness and depending on satellite type and day/night input
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(fire, aes(x = brightness, y = frp))+
+  geom_point(aes(color = daynight, shape = satellite)) +
+   scale_color_manual(values=c("firebrick1", "darkcyan"))
+
+```
+
+
+Brightness is positively correlated to Frp, which make sens. If a fire is getting more luminous, it means that the fire radiative power is high as well.
+
+
+# Frp according acquisition date and scan
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(plotly)
+fig <- plot_ly(fire, x = ~acq_date, y = ~frp, z = ~scan, 
+               color = ~satellite, # define color on param
+               colors = c('cornflowerblue', 'goldenrod1'))
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'Date'),
+                     yaxis = list(title = 'frp'),
+                     zaxis = list(title = 'scan')))
+
+fig
+
+#https://jtr13.github.io/cc21/d-plot-in-r.html
+
+```
+
+The 12th September 2019, the fire with the highest Frp has been detected ( with a scan of 2.5).
+
+
+# remove instrument, version (just one value), confidence
+```{r}
+fire_modelling = select(fire, -9, -10, -11, -14)
+
+```
+
+# remove outliers using interquartile method
+
+```{r}
+#find Q1, Q3, and interquartile range for values of each column which need it
+Q1_frp <- quantile(fire_modelling$frp, .25)
+Q3_frp <- quantile(fire_modelling$frp, .75)
+IQR_frp <- IQR(fire_modelling$frp)
+
+Q1_bright_t31 <- quantile(fire_modelling$bright_t31, .25)
+Q3_bright_t31 <- quantile(fire_modelling$bright_t31, .75)
+IQR_bright_t31 <- IQR(fire_modelling$bright_t31)
+
+Q1_brightness <- quantile(fire_modelling$brightness, .25)
+Q3_brightness <- quantile(fire_modelling$brightness, .75)
+IQR_brightness <- IQR(fire_modelling$brightness)
+
+Q1_scan <- quantile(fire_modelling$scan, .25)
+Q3_scan <- quantile(fire_modelling$scan, .75)
+IQR_scan <- IQR(fire_modelling$scan)
+
+Q1_acq_time <- quantile(fire_modelling$acq_time, .25)
+Q3_acq_time <- quantile(fire_modelling$acq_time, .75)
+IQR_acq_time <- IQR(fire_modelling$acq_time)
+
+Q1_track <- quantile(fire_modelling$track, .25)
+Q3_track <- quantile(fire_modelling$track, .75)
+IQR_track <- IQR(fire_modelling$track)
+
+```
+
+
+```{r}
+#only keep rows in dataframe that have values within 1.5*IQR of Q1 and Q3
+fire_out_frp <- fire_modelling %>%
+  subset(frp> (Q1_frp - 1.5*IQR_frp) & frp< (Q3_frp + 1.5*IQR_frp))
+
+fire_out_bright_t31 <- fire_out_frp %>%
+  subset(bright_t31> (Q1_bright_t31 - 1.5*IQR_bright_t31) & bright_t31< (Q3_bright_t31 + 1.5*IQR_bright_t31))
+
+fire_out_brightness <- fire_out_bright_t31 %>%
+  subset(brightness> (brightness - 1.5*IQR_brightness) & brightness< (Q3_brightness + 1.5*IQR_brightness))
+
+fire_out_scan <- fire_out_brightness %>%
+  subset(scan> (Q1_scan - 1.5*IQR_scan) & scan< (Q3_scan + 1.5*IQR_scan))
+
+fire_out_acq_time <- fire_out_scan %>%
+  subset(acq_time> (acq_time - 1.5*IQR_acq_time) & acq_time< (Q3_acq_time + 1.5*IQR_acq_time))
+
+fire_out <- fire_out_acq_time %>%
+  subset(track> (track - 1.5*IQR_track) & track< (Q3_track + 1.5*IQR_track))
+
+dim(fire_out)
+
+```
+
+
+# split dataset 
+
+```{r}
+inTrain <- createDataPartition(
+  y = fire_out$frp,
+  p = .85,
+  list = FALSE
+)
+
+fi_trn <- fire_out[ inTrain,]
+fi_tst  <- fire_out[-inTrain,]
+
+
+```
+
+
+# modelling 
+```{r}
+#multiple regression model 
+uin = 1234
+set.seed(uin)
+fi_lm  = train(frp ~ . , data = fi_trn,
+               method = "lm",
+               preProcess = c('scale', 'center'))
+
+#lasso regression model 
+set.seed(uin)
+fi_lasso  = train(frp ~ . , data = fi_trn,
+               method = "lasso",
+               preProcess = c('scale', 'center'))
+
+#ridge regression model 
+set.seed(uin)
+fi_ridge  = train(frp ~ . , data = fi_trn,
+               method = "ridge",
+               preProcess = c('scale', 'center'))
+
+
+#elastic net  
+set.seed(uin)
+fi_glmnet  = train(frp ~ . , data = fi_trn,
+               method = "glmnet",
+               preProcess = c('scale', 'center'))
+
+
+
+#svm linear
+set.seed(uin)
+svm_linear <- train(
+  frp ~ . , data = fi_trn, 
+  method = "svmLinear",
+  verbose = FALSE,
+  preProcess = c("center","scale")
+  )
+
+```
+
+
+
+# performance and testing 
+
+```{r}
+df_perf_fi_lm <- getTrainPerf(fi_lm) %>% glimpse()
+fi_lm_rmse_train <- df_perf_fi_lm$TrainRMSE  
+fi_lm_mae_train <- df_perf_fi_lm$TrainMAE
+fi_lm_mae_Rsquared <- df_perf_fi_lm$TrainRsquared
+fi_lm_pred <- fi_lm %>% predict(fi_tst)
+fi_lm_rmse_test <- RMSE(fi_lm_pred, fi_tst$frp)
+fi_lm_mae_test <- MAE(fi_lm_pred, fi_tst$frp)
+
+df_perf_fi_lasso <- getTrainPerf(fi_lasso) %>% glimpse()
+fi_lasso_rmse_train <- df_perf_fi_lasso$TrainRMSE
+fi_lasso_mae_train <- df_perf_fi_lasso$TrainMAE
+fi_lasso_Rsquared <- df_perf_fi_lasso$TrainRsquared 
+fi_lasso_pred <- fi_lasso %>% predict(fi_tst)
+fi_lasso_rmse_test <- RMSE(fi_lasso_pred, fi_tst$frp)
+fi_lasso_mae_test <- MAE(fi_lasso_pred, fi_tst$frp)
+
+df_perf_fi_ridge <- getTrainPerf(fi_ridge) %>% glimpse()
+fi_ridge_rmse_train <- df_perf_fi_ridge$TrainRMSE  
+fi_ridge_mae_train <- df_perf_fi_ridge$TrainMAE
+fi_ridge_Rsquared <- df_perf_fi_ridge$TrainRsquared  
+fi_ridge_pred <- fi_ridge %>% predict(fi_tst)
+fi_ridge_rmse_test <- RMSE(fi_ridge_pred, fi_tst$frp)
+fi_ridge_mae_test <- MAE(fi_ridge_pred, fi_tst$frp)
+
+df_perf_fi_glmnet <- getTrainPerf(fi_glmnet) %>% glimpse()
+fi_glmnet_rmse_train <- df_perf_fi_glmnet$TrainRMSE 
+fi_glmnet_mae_train <- df_perf_fi_glmnet$TrainMAE
+fi_glmnet_Rsquared <- df_perf_fi_glmnet$TrainRsquared 
+fi_glmnet_pred <- fi_glmnet %>% predict(fi_tst)
+fi_glmnet_rmse_test <- RMSE(fi_glmnet_pred, fi_tst$frp)
+fi_glmnet_mae_test <- MAE(fi_glmnet_pred, fi_tst$frp)
+
+df_perf_svm_linear <- getTrainPerf(svm_linear) %>% glimpse()
+fi_svm_linear_rmse_train <- df_perf_svm_linear$TrainRMSE 
+fi_svm_mae_train <- df_perf_svm_linear$TrainMAE
+fi_svm_Rsquared <- df_perf_svm_linear$TrainRsquared 
+fi_svm_linear_pred <- svm_linear %>% predict(fi_tst)
+fi_svm_linear_rmse_test <- RMSE(fi_svm_linear_pred, fi_tst$frp)
+fi_svm_mae_test <- MAE(fi_svm_linear_pred, fi_tst$frp)
+
+```
+
+
+
+# table with summarized performance
+```{r}
+library(gt)
+res <- tribble(~model, ~train_rmse, ~train_mae, ~train_R2, ~test_rmse, ~test_mae,
+               "lm", fi_lm_rmse_train, fi_lm_mae_train, fi_lm_mae_Rsquared, fi_lm_rmse_test,fi_lm_mae_test,
+               "lasso", fi_lasso_rmse_train, fi_lasso_mae_train, fi_lasso_Rsquared, fi_lasso_rmse_test,fi_lasso_mae_test,
+               "ridge", fi_ridge_rmse_train, fi_ridge_mae_train,fi_ridge_Rsquared, fi_ridge_rmse_test,fi_ridge_mae_test,
+               "glmnet", fi_glmnet_rmse_train, fi_glmnet_mae_train, fi_glmnet_Rsquared, fi_glmnet_rmse_test, fi_glmnet_mae_test,
+               "svr", fi_svm_linear_rmse_train, fi_svm_mae_train, fi_svm_Rsquared, fi_svm_linear_rmse_test,fi_svm_mae_test,
+                    )
+
+gt_results <- gt(res)
+gt_results
+
+```
+Due to an overfitting risk, the models need to be simple, there are no big differences between all the models.
+Interestingly the svr model gives almost the same results as the regression one.
+
+
+```{r}
+library(gbm)
+ggplot(varImp(svm_linear))
+```
+
+
+
+```{r}
+summary(svm_linear)
+```
+
+
+
+
