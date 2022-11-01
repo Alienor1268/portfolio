@@ -8,6 +8,7 @@ This portfolio gathers what is possible for a beginner in computer programming. 
 
 
 ![README](pictures/bird.png)
+
 Picture from: https://pixabay.com/photos/red-throat-nature-bird-winter-3952917/
 
 I focus particularly on the visualizations that are possible with the different techniques used. I think it's always amazing the results you can get and the freedom and range of possibilities. The visualizations allow to transmit information quickly, they allow an improvement of the communication.
