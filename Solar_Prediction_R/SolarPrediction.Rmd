@@ -1,0 +1,1082 @@
+---
+title: "Solar Prediction"
+author: "Aliénor Franck de Préaumont - 2010837068 "
+output:
+  prettydoc::html_pretty:
+    toc: true
+    theme: cayman
+    highlight: github
+
+---
+https://gitlab.web.fh-kufstein.ac.at/2010837068/solar-prediction.git  
+
+Investments in solar industry are heavily increasing nowadays, like for example the Disney company which is planing huge investments in solar plants in order to low their carbon  footprint:  
+
+https://www.huffpost.com/entry/disney-world-earth-day-solar-energy-facility-plan_n_60818daee4b082bab009d812  
+ 
+As is shown in this example,  solar power is a key for a green clean future. Solar forecasting is enabling the implementation of weather-dependent technologies such as : 
+photovoltaic solar systems, that are able to convert the solar light to electricity, 
+active solar systems, which collect the solar radiation and converet it in heat, 
+Bioclimatic architectures, which are designing  buildings and spaces based on local climate.
+
+The purpose of this project is to predict Solar Radiation using the kaggle dataset "SolarPrediction". Solar irradiation is the power released from the sun, and is measured in watt per square meters
+The dataset has been issued by the NASA, which indicates that solar radiation is currently a key topic. 
+
+How can we forecast as best as possible the solar Radiation? 
+
+For forecasting we will use Solar Radiation as output variable, as input variable we will take into account: 
+
+Temperature: which is measured in fahrenheit degrees     
+Humidity: which is indicated as a percentage      
+Barometric pressure: which is measured in inches of mercury (Hg)   
+Wind direction: which is evaluated in degrees
+Wind speed: which is  measured in miles per hour
+Sunrise/sunset: which are calculated  from Hawaii time.   
+
+There are as well Date and time which give us the temporal evolution from solar radiation. 
+In the first part we will do descriptive statistics in order to check the potential issues in the dataset, in the second part we will compare neural network models and the ordinary least square method for forecasting. In the third part we will care about trees.
+
+
+DESCRIPTIVE STATISTICS: which troubles encounter the dataset?
+---------------
+ 
+
+
+```{r, message=FALSE}
+library(ggplot2)
+library(tidymodels)
+library(ggridges)
+library(readr)
+library(neuralnet)
+uin = 2010837068
+```
+
+
+```{r, message=FALSE}
+SolarPred <- read_csv("./SolarPrediction.csv")
+```
+
+
+```{r}
+SolarPred %>%
+  ggplot( aes(x=Radiation)) +
+    geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8)
+
+
+```
+
+
+We can see here the density function of our output variable, we notice an elbow shape, most of the Radiation observations are between 0 and 150 w/m2. The radiation distribution seems to be very skewed. we see a long tail on the right side. This skewness could lead to problems in our statistical models. 
+
+
+```{r}
+mean_Radiation <- mean(SolarPred$Radiation)
+median_Radiation <- median(SolarPred$Radiation)
+min_Radiation <- min(SolarPred$Radiation)
+max_Radiation <-  max(SolarPred$Radiation)
+
+library(gt)
+Radiation_tbl <- tibble(
+    mean_Radiation,
+    median_Radiation,
+    min_Radiation,
+    max_Radiation
+  ) 
+
+gt_tbl <- gt(data = Radiation_tbl)
+gt_tbl
+```
+
+
+
+We notice here a big difference between Radiation mean and the Radiation median, As we saw before the Radiation data are skewed, that's why the mean is much more higher than the median,the median is in our case a better indicator than the mean. 
+The largest value is 1601,26 w/m2 and the smallest one is 1,1w/m2.
+
+
+
+```{r}
+
+SolarPred %>%
+  ggplot( aes(x = "", y = Radiation)) +
+    geom_boxplot(fill = "brown3") +
+  theme_minimal()
+
+
+
+```
+
+
+We can see on this boxplot that above 500 w/m2, there are outliers observations. We then need to pay attention for the rest of the analysis
+
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '100%'}
+knitr::include_graphics("swiss.png")
+#https://www.energiepfad.ch/wp-content/uploads/504_Ausstellung_Sonnenenergie.pdf
+```
+
+In Switzerland for example, the Radiation are varying between 150w/m2 and 180w/m2.
+
+We will use regression methods in order to predict the solar Radiation
+
+Let see the correlation between each input variable and the output variable.
+
+
+```{r}
+
+p1 <-SolarPred %>%
+  ggplot( aes(x=Temperature, y = Radiation)) +
+    geom_point( color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy")
+p1
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+p2 <- SolarPred %>%
+  ggplot( aes(x=Pressure, y = Radiation)) +
+    geom_point(color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy") 
+
+p3 <-SolarPred %>%
+  ggplot( aes(x=Humidity, y = Radiation)) +
+    geom_point( color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy")
+
+p4 <- SolarPred %>%
+  ggplot( aes(x=`WindDirection(Degrees)`, y = Radiation)) +
+    geom_point(color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy") 
+
+p5 <-SolarPred %>%
+  ggplot( aes(x=Speed, y = Radiation)) +
+    geom_point( color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy")
+
+p6 <- SolarPred %>%
+  ggplot( aes(x=TimeSunRise, y = Radiation)) +
+    geom_point(color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy") 
+
+p7 <-SolarPred %>%
+  ggplot( aes(x=TimeSunSet, y = Radiation)) +
+    geom_point( color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy")
+
+p8 <- SolarPred %>%
+  ggplot( aes(x=Data, y = Radiation)) +
+    geom_point(color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy") 
+
+p9 <- SolarPred %>%
+  ggplot( aes(x=Time, y = Radiation)) +
+    geom_point(color = "lightcoral") +
+    geom_smooth(se = FALSE, color = "navy") 
+
+
+library(gridExtra)
+grid.arrange( p2,p3, p4, p5, p6, p7, p8, p9, nrow = 4)
+
+```
+
+
+
+We can see a clear correlation between temperature and Radiation, which make sens. Temperature and Radiation are strongly positively correlated. We notice a positive correlation between Speed, Pressure and the output variable as well.
+
+
+We don't see any correlation between  Wind Direction, TimeSunSet, TimeSunRise, Data, Time and the output variable. 
+
+
+It seems, that WindDirection has an heteroscedasticity problem (curvy distribution). Let's check if it's true with some plots.
+
+```{r}
+
+lmMod <- lm(Radiation ~ `WindDirection(Degrees)`, data=SolarPred)
+
+par(mfrow=c(2,2), col = "steelblue4") 
+plot(lmMod)
+
+```
+
+
+The plots we are interested in are at the top-left one and the bottom-left one. The top-left is the chart of residuals vs fitted values, while in the bottom-left one, it is standardised residuals on Y axis. If there is absolutely no heteroscedastity, we should see a completely random, equal distribution of points throughout the range of X axis and a flat red line.
+
+But in our case, as you can notice from the top-left plot, the red line is slightly curved and the residuals seem to increase as the fitted Y values increase. So, the inference here is, heteroscedasticity exists.
+
+
+We can  use as well a Breusch Pagan test in order to check if the variable Humidity has the same problem.  
+
+```{r}
+
+lmHum <- lm(Radiation ~ Humidity, data=SolarPred)
+lmtest::bptest(lmHum) 
+
+```
+The p value is less than the significance level of 0.05, we can reject the null hypothesis, that the variance of the residuals is constant. There is an heteroscedasticity problem with Humidity.
+
+
+
+```{r}
+library(naniar)
+vis_miss(SolarPred)
+```
+
+
+We notice that there are no NA Values in our dataset, (which simplify the data preprocessing).
+
+
+Let's check the density function of each input variables. 
+
+```{r}
+p10 <- SolarPred %>%
+  ggplot( aes(x=Temperature)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+p10
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+
+p11 <- SolarPred %>%
+  ggplot( aes(x=Pressure)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+p12 <- SolarPred %>%
+  ggplot( aes(x=Humidity)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+p13 <- SolarPred %>%
+  ggplot( aes(x=`WindDirection(Degrees)`)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+p14 <- SolarPred %>%
+  ggplot( aes(x=Speed)) +
+    geom_density(fill="slategray2", color="slategray2", alpha=0.8)
+
+
+
+grid.arrange(p11, p12, p13, p14, nrow = 2)
+
+```
+
+None of them are exactly normally distributed, we will need to pre process the data, if we want to use algorithm  or test which are dependant to the normal distribution assumption. 
+
+Nonetheless we can notice that Pressure and Temperature tend to be closer to a normal distribution.
+
+Speed is a positively skewed distribution (or right skewed): The most frequent values are low; tail is toward the high values.
+Humidity and Pressure are negatively skewed distribution, the most frequent values are high.
+
+We measure here the symmetry of each distribution, we can do a qqplot to check graphically the normality. 
+```{r}
+library(ggpubr)
+p15 <- ggqqplot(SolarPred$Temperature, ylab = "Temperature", color = "lightpink2")
+
+p_rad <- ggqqplot(SolarPred$Radiation, ylab = "Radiation", color = "lightpink2")
+
+grid.arrange(p15, p_rad,  nrow = 1)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+p16 <- ggqqplot(SolarPred$Pressure, ylab = "Pressure", color = "lightpink2")
+p17 <- ggqqplot(SolarPred$Humidity, ylab = "Humidity", color = "lightpink2")
+p18 <- ggqqplot(SolarPred$`WindDirection(Degrees)`, ylab = "WindDirection", color = "lightpink2")
+p19 <- ggqqplot(SolarPred$Speed, ylab = "Speed", color = "lightpink2")
+
+grid.arrange(p16, p17, p18, p19, nrow = 3)
+
+
+```
+
+According to qqplots, the output variable isn't normal distributed, Temperature, Pressure and Speed tend to be close to a normal ditribution, because most of the observations are roughtly on a straight line on the graphs.  
+
+
+```{r, echo=FALSE, message=FALSE}
+
+mean_temperaure <- mean(SolarPred$Temperature)
+median_temperature <- median(SolarPred$Temperature)
+min_temperature <- min(SolarPred$Temperature)
+max_temperature <-  max(SolarPred$Temperature)
+
+library(gt)
+
+mean_Pressure <- mean(SolarPred$Pressure)
+median_Pressure <- median(SolarPred$Pressure)
+min_Pressure <- min(SolarPred$Pressure)
+max_Pressure <-  max(SolarPred$Pressure)
+
+
+mean_Speed <- mean(SolarPred$Speed)
+median_Speed <- median(SolarPred$Speed)
+min_Speed <- min(SolarPred$Speed)
+max_Speed <-  max(SolarPred$Speed)
+
+
+
+
+intput_tbl <- tribble(~variable, ~mean, ~median, ~min, ~max,
+    "Speed", mean_Speed,median_Speed,min_Speed,max_Speed,
+    "Temperature", mean_Pressure, median_Pressure,min_Pressure,max_Pressure,
+    "Pressure",mean_Pressure,median_Pressure, min_Pressure,max_Pressure
+  ) 
+
+intput_tbl
+
+
+
+```
+
+T test
+
+We try to identify a significant temperature difference between 2 groups. 
+In the first group, the pressure is higher than 30,45 and in the second group the pressure is lower than 30,45, we run therefore  a t test. 
+
+H0 : there is no significant difference between the mean in the 2 groups
+H1:  there is a significant difference between the mean in the 2 groups
+
+```{r}
+
+filter_sup_pressure <- SolarPred %>% filter(Pressure> 30.45)
+filter_inf_pressure <- SolarPred %>% filter(Pressure< 30.45)
+
+y <- t.test(filter_sup_pressure$Temperature, filter_inf_pressure$Temperature)
+print(y)
+
+
+```
+
+In our test, the t-value is 32.935, the degrees of freedom are 17366, the statistical significance ( p-value)is lower than 2.2e-16, we can conclude, that there is statistical significant difference in mean between the 2 groups ( p < 0.05).  
+
+
+
+
+To conclude, our data set has no NA values, all the variables are skewed, Humidity and Wind direction have heteroscedasticity problems. We won't use the variables to time series. 
+For the rest of  the analysis we will concentrate on the input variables: Temperature, Pressure and Speed. 
+
+
+
+## NEURAL NETWORK VS ORDINARY LEAST SQUARED: which model will perform the best?
+
+R²: 
+R² represents the proportion of variance explained by our model. 
+
+R² =  1 - (SSE/SST)
+The sum of squared errors represent the sum of the squared differences between the true values and the predicted values. The total sum of squares represent the sum of the squared differences between the actual values and the mean of the actual values.
+
+RMSE:
+The Root Mean Squared error has to be as low as possible, it can range between 0 and infinity. 
+For RMSE, we are substracting the predicted values from the true y values, then we square the results, we sum them, we get the average and we apply the square root, RMSE is common evaluation metric. 
+With RMSE, the results are the same as the outcome variable. 
+
+MAE: 
+The Mean Absolut Error measures how far the predicted values are from the actual y. In order to get the MAE, we substract the predicted values from the true y values. We take the absolute value of each error, we sum them and we take the average.
+
+
+We use 3 variables as input variables: Temperature + Pressure + Speed
+
+
+```{r}
+SolarPredict <- 
+  SolarPred %>% 
+  mutate(Radiation = factor(Radiation))
+
+set.seed(uin)
+SP_split <- initial_split(SolarPred, prop = 0.7)
+
+SP_train <- training(SP_split)
+SP_test <- testing(SP_split)
+
+SP_rec <- recipe(Radiation ~ Temperature + Pressure + Speed, data=SP_train) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+```
+
+
+We will implement 2 MLP models: one with a relu activation function and the other one with a softmax function.
+MLP refers to multi layer perceptron, it works with feed forward neural network: there 3 different layers in MLP models: input layer ( our input variables), an output variable (the predicted Radiation) and some hidden layers. We are using here just 3 input variables (Temperature, Pressure, Speed), otherwise there are too many weights, and my computer isn't able to compute. 
+
+
+We are not training a recurrent network, because it takes a too long computation time, we are instead using perceptron which are feedforward models, it means that all the arrows are going to the output layer, that's why it's sparser than a neural net, which can contain loops.
+
+Here we will train the models with 10 hidden layers and 100 epochs (iteration). 
+
+
+```{r, echo=FALSE, message=FALSE}
+library(nnet)
+library(neuralnet)
+
+NN  = neuralnet(Radiation ~ Temperature + Pressure + Humidity, SP_train, hidden = 10 , linear.output = F )
+
+# plot neural network
+plot(NN, rep = "best")
+
+
+```
+
+
+
+```{r}
+
+mlp_relu <- mlp(epochs = 100, hidden_units = 10, activation = "relu") %>%
+  set_engine("nnet") %>% 
+  set_mode("regression")
+
+mlp_relu_wof <- workflow() %>%
+  add_model(mlp_relu) %>%
+  add_recipe(SP_rec)
+
+
+mlp_relu_fit <- mlp_relu_wof %>%
+  fit(data = SP_train)
+
+
+relu_model_time = system.time({
+  relu_wk = workflow() %>% 
+    add_recipe(SP_rec) %>% 
+    add_model(mlp_relu) %>% 
+    fit(data = SP_train)
+})
+
+```
+
+
+```{r, echo=FALSE}
+results_mlp_relu_train <- mlp_relu_fit %>%
+  predict(new_data = SP_train) %>%
+  mutate(
+    truth = SP_train$Radiation,
+
+  ) 
+
+results_mlp_relu_test <- mlp_relu_fit %>%
+  predict(new_data = SP_test) %>%
+  mutate(
+    truth = SP_test$Radiation,
+    model = "nnet"
+  ) 
+```
+
+```{r, message=FALSE}
+library(MLmetrics)
+
+R2_train_relu <- R2_Score(y_pred = results_mlp_relu_train$.pred, y_true = results_mlp_relu_train$truth)
+R2_test_relu <- R2_Score(y_pred = results_mlp_relu_test$.pred, y_true = results_mlp_relu_test$truth)
+
+MAE_train_relu <- MAE(y_pred = results_mlp_relu_train$.pred, y_true = results_mlp_relu_train$truth)
+MAE_test_relu <- MAE(y_pred = results_mlp_relu_test$.pred, y_true = results_mlp_relu_test$truth)
+
+
+MSE_train_relu <- MSE(y_pred = results_mlp_relu_train$.pred, y_true = results_mlp_relu_train$truth)
+MSE_test_relu <- MSE(y_pred = results_mlp_relu_test$.pred, y_true = results_mlp_relu_test$truth)
+RMSE_train_relu <- RMSE(y_pred = results_mlp_relu_train$.pred, y_true = results_mlp_relu_train$truth)
+RMSE_test_relu <- RMSE(y_pred = results_mlp_relu_test$.pred, y_true = results_mlp_relu_test$truth)
+relu_time <- relu_model_time["elapsed"]
+
+```
+
+
+```{r}
+mlp_softmax <- mlp(epochs = 100, hidden_units = 10, activation = "softmax") %>%
+  set_engine("nnet") %>% 
+  set_mode("regression")
+
+mlp_softmax_wof <- workflow() %>%
+  add_model(mlp_relu) %>%
+  add_recipe(SP_rec)
+
+
+mlp_softmax_fit <- mlp_softmax_wof %>%
+  fit(data = SP_train)
+
+
+softmax_model_time = system.time({
+  softmax_wk = workflow() %>% 
+    add_recipe(SP_rec) %>% 
+    add_model(mlp_relu) %>% 
+    fit(data = SP_train)
+})
+
+```
+
+
+```{r, echo=FALSE}
+results_mlp_softmax_train <- mlp_softmax_fit %>%
+  predict(new_data = SP_train) %>%
+  mutate(
+    truth = SP_train$Radiation,
+
+  ) 
+
+results_mlp_softmax_test <- mlp_softmax_fit %>%
+  predict(new_data = SP_test) %>%
+  mutate(
+    truth = SP_test$Radiation,
+    model = "nnet"
+  ) 
+```
+
+```{r, echo=FALSE}
+R2_train_softmax <- R2_Score(y_pred = results_mlp_softmax_train$.pred, y_true = results_mlp_softmax_train$truth)
+R2_test_softmax <- R2_Score(y_pred = results_mlp_softmax_test$.pred, y_true = results_mlp_softmax_test$truth)
+MSE_train_softmax <- MSE(y_pred = results_mlp_softmax_train$.pred, y_true = results_mlp_softmax_train$truth)
+MSE_test_softmax <- MSE(y_pred = results_mlp_softmax_test$.pred, y_true = results_mlp_softmax_test$truth)
+RMSE_train_softmax <- RMSE(y_pred = results_mlp_softmax_train$.pred, y_true = results_mlp_softmax_train$truth)
+RMSE_test_softmax <- RMSE(y_pred = results_mlp_softmax_test$.pred, y_true = results_mlp_softmax_test$truth)
+MAE_train_softmax <- MAE(y_pred = results_mlp_softmax_train$.pred, y_true = results_mlp_softmax_train$truth)
+MAE_test_softmax <- MAE(y_pred = results_mlp_softmax_test$.pred, y_true = results_mlp_softmax_test$truth)
+softmax_time <- softmax_model_time["elapsed"]
+
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+
+library(gt)
+
+tbl_mlp <- tribble( ~model, ~R2_train, ~R2_test, ~MAE_train, ~MAE_test, ~RMSE_train, ~RMSE_test, ~time,
+    "MLP relu", R2_train_relu, R2_test_relu, MAE_train_relu, MAE_test_relu, RMSE_train_relu, RMSE_test_relu,  relu_time,
+    "MLP softmax", R2_train_softmax, R2_test_softmax, MAE_train_softmax, MAE_test_softmax, RMSE_train_softmax,RMSE_test_softmax,  softmax_time,
+
+  ) 
+
+gt_tbl_mlp <- gt(data = tbl_mlp )
+gt_tbl_mlp
+
+
+```
+
+We get the output of a node using a transfer function, named as well activation function. We just trained our model  one time with a relu function and one time with a softmax function. We get nearly the same performance. The softmax function take a bit longer to process. 
+
+The rectified linear unit (Relu) function has a 0 output if the input is less than 0. The output is equal to the input, if the input is bigger than 1. f(x)=max(0,x). There is no heavy computation time for a relu function.  
+The Relu is used to avoid vanishing gradient problem. Multilayer perceptron are working with backward propagation: it refers to the changes in weights in order to reduce the loss after every epochs. Some functions such as sigmoid or tanh suffer from vanishing gradient problem due to the depth of the network.
+
+On the contrary, the slope of the ReLu function doesn't get saturate, if the input are increasing.
+
+The softmax function is a generalisation of the logistic function, that's why it's performing a bit better on our dataset, which is a regression topic. A softmax function computes imput values into probabilities. Softmax has importance for the last output layer. 
+
+
+
+
+```{r}
+
+lm_spec <- linear_reg() %>%
+  set_engine(engine = "lm")
+
+
+lm_model_time = system.time({
+  # recipe
+  lm_wk = workflow() %>% 
+    add_recipe(SP_rec) %>% 
+    add_model(lm_spec) %>% 
+    fit(data = SP_train)
+  # train
+})
+
+lm_wof <- workflow() %>%
+  add_model(lm_spec) %>%
+  add_recipe(SP_rec)
+
+
+lm_fit <- lm_wof %>%
+  fit(
+    data = SP_train
+  )
+```
+
+
+
+```{r}
+
+results_train <- lm_fit %>%
+  predict(new_data = SP_train) %>%
+  mutate(
+    truth = SP_train$Radiation,
+    model = "lm"
+  ) 
+
+results_test <- lm_fit %>%
+  predict(new_data = SP_test) %>%
+  mutate(
+    truth = SP_test$Radiation,
+    model = "lm"
+  ) 
+
+
+
+```
+
+
+```{r}
+ggplot(data = results_test,
+       mapping = aes(x = .pred, y = truth)) +
+  geom_point(color = 'lightcoral') +
+  geom_abline(intercept = 0, slope = 1, color = 'purple4') +
+  labs(title = 'Linear Regression Results - Advertising Test Set',
+       x = 'Predicted Radiation',
+       y = 'Actual Radiation')
+```
+
+
+METRICS
+
+```{r, echo=FALSE}
+library(MLmetrics)
+MAE_train_lm <- MAE(y_pred = results_train$.pred, y_true = results_train$truth)
+MAE_test_lm <- MAE(y_pred = results_test$.pred, y_true = results_test$truth)
+R2_train_lm <- R2_Score(y_pred = results_train$.pred, y_true = results_train$truth)
+R2_test_lm <- R2_Score(y_pred = results_test$.pred, y_true = results_test$truth)
+MSE_train_lm <- MSE(y_pred = results_train$.pred, y_true = results_train$truth)
+MSE_test_lm <- MSE(y_pred = results_test$.pred, y_true = results_test$truth)
+RMSE_train_lm <- RMSE(y_pred = results_train$.pred, y_true = results_train$truth)
+RMSE_test_lm <- RMSE(y_pred = results_test$.pred, y_true = results_test$truth)
+lm_time <- lm_model_time["elapsed"]
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+
+library(gt)
+
+tbl <- tribble( ~model, ~RMSE_test, ~MAE_test, ~R2_test, ~time,
+    "MLP relu", RMSE_test_relu,MAE_test_lm,R2_test_lm, relu_time,
+    "MLP softmax", RMSE_test_softmax,MAE_test_softmax,R2_test_softmax, softmax_time,
+    "lineare regression", RMSE_test_lm,MAE_test_lm,R2_test_lm, lm_time,
+
+  ) 
+
+gt_tbl <- gt(data = tbl)
+gt_tbl
+
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE}
+
+tbl_rmse <- tribble( ~model, ~RMSE_test, 
+                    "MLP relu",RMSE_test_relu, 
+                    "MLP softmax", RMSE_test_softmax,
+                    "lineare regression", RMSE_test_lm)
+
+ggplot(tbl_rmse, aes(x = model, y =RMSE_test)) +
+  geom_col(fill="mediumseagreen", color="#e9ecef")
+
+```
+
+
+
+
+
+We can see here that the multi layer perceptron with a softmax function is performing better than the ordinary least square method, the RMSE is lower.
+
+
+The RMSE indicates us a predicted output. It is in the same unit as the Radiation variable.
+
+
+The MAE tells us how far are the predicted values from the actual Radiation value. None of our model is optimal, we need to find a better solution.  The MAE from the softmax function is performing a bit better than the others models. We can notice that the MAE from the relu function is the same as the MAE from the ordinary least square method. ( both have in common the linear relationship).
+
+
+But the computation time of multi layer perceptron is higher than for the simple ordinary least square method.
+Neurons from the neural network need to train, that's why, it takes longer. Regarding the interpretability, the linear regression, is better, because it's a simple model. If we take into account the simplicity and Occam's razor, the linear model is the best one.
+
+If we just take into account the performance, the multilayer perceptron method is winning.
+
+
+We can try to boost the performance of our linear regression using a cross validation resampling method.
+
+
+
+```{r}
+set.seed(uin)
+nfl_folds <- vfold_cv(SP_train, strata = Radiation)
+
+lm_res <- fit_resamples(
+  lm_wof,
+
+  nfl_folds,
+  control = control_resamples(save_pred = TRUE)
+)
+
+
+```
+
+
+
+
+
+
+```{r}
+lm_res %>%
+  unnest(.predictions) %>%
+  ggplot(aes(Radiation, .pred, color = id)) +
+  geom_abline(lty = 2, color = "gray80", size = 1.5) +
+  geom_point(alpha = 0.5) +
+  labs(
+    x = "Truth",
+    y = "Predicted game attendance",
+    color = NULL
+  )
+#https://juliasilge.com/blog/intro-tidymodels/
+```
+
+
+```{r}
+lm_res %>% collect_metrics()
+```
+
+
+Even using 10 fold cross validation method and stratifying with the output variable Radiation, the ordinary least square model can't beat the performance of the mlp method.
+
+
+## CAN A TREE APPROACH IMPROVE THE PERFORMANCE?
+
+
+We noticed that the ordinary least square method didn't performed so good, it means that there isn't a strong linear relationship between the input and output variables. We tried already a method based on a nonlinear relationship (neural networks), we are now trying another method which is as well based on a nonlinear relationship: tree ensembles. 
+
+Neural networks are not so easily understandable algorithm, we can try with the tree approach to find out a more understandable model. When we see a decision tree, it can be easy to understand that a feature is dividing the dataset in 2 categories, the child groups is then splitted by the additional variables. 
+
+A neural network is like a "black box", we can't explain exactly the decision process, that's why we will try here ensemble methods.
+
+A random forest uses multiple trees, usually it outperforms the traditional trees. The different trees operate as an ensemble. They are merged together in order to increase the performance. 
+
+In the end of processing, the random forest algorithm convert using averages or "majority rules"
+It's a tree based model, so we don't need, to preprocess the data so much. In order to compare correctly all of our models, we let the recipe like used before ( with center and scale, for normalisation, but we wouldn't actually need it for random forest).
+
+The hyperparameter we want to tune are mtry and min_n, we will run 100 trees. The processing time is getting higher, if the number of trees are increasing.
+
+mtry: refers to the number of variables randomly sampled at each split
+ntrees: is the number of trees to grow
+
+We are using here as well 5 fold cross validation, stratified with the output variable Radiation.
+
+
+```{r}
+library(rpart)
+library(rpart.plot)
+dtree.cp <- rpart(Radiation ~ Temperature + Pressure + Speed, data = SP_train, control = rpart.control(cp = 0.005))
+rpart.plot(dtree.cp)
+
+
+```
+
+We can see here an example of one single tree produced with the rpart function.
+
+
+
+```{r}
+model_rf <- rand_forest(mtry = tune(),trees = 100, min_n = tune()) %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+
+rf_wf <- workflow() %>%
+  add_recipe(SP_rec) %>%
+  add_model(model_rf)
+
+```
+
+
+We train a first random forest algorithm with a grid = 10, no tuning parameter and a 5 fold cross validation.
+
+```{r, message=FALSE}
+set.seed(uin)
+nfl_folds <- vfold_cv(SP_train, v = 5, strata = Radiation)
+
+
+set.seed(uin)
+rf <- tune_grid(
+  rf_wf,
+  resamples = nfl_folds,
+  grid = 10
+)
+
+
+rf %>%
+  collect_metrics() %>%
+  filter(.metric == "rmse") 
+
+```
+We see here the results for each sample, when the grid is equal to 10.
+Then we try to tune the hyperparameter mtry and min_n with the rf.
+
+```{r, results='hide', message=FALSE}
+
+rf_grid <- grid_regular(
+  mtry(range = c(1, 5)),
+  min_n(range = c(1, 3)),
+  levels = 5
+)
+
+
+set.seed(uin)
+rf <- tune_grid(
+  rf_wf,
+  resamples = nfl_folds,
+  grid = rf_grid
+)
+
+rf %>% collect_metrics()
+
+
+```
+
+We see here the results after tuning hyperparameter and 5 fold cross validation. 
+
+
+
+```{r}
+rf %>%
+  collect_metrics() %>%
+  mutate(mtry = factor(mtry)) %>%
+  ggplot(aes(min_n, mean, color = mtry)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) +
+  scale_x_log10(labels = scales::label_number()) +
+  scale_color_viridis_d(option = "plasma", begin = .9, end = 0)
+
+#https://www.tidymodels.org/start/tuning/
+```
+
+
+
+```{r, echo=FALSE}
+best_rmse <- select_best(rf, "rmse")
+df_best_rmse <- as.data.frame(best_rmse)
+best_mtry_rf <- df_best_rmse[1,1]
+
+best_mtry_min_n <- df_best_rmse[1,2]
+
+
+hyp_rf <- tribble( ~best_mtry, ~best_min_n, 
+                        best_mtry_rf, best_mtry_min_n, 
+                        )
+hyp_par_rf <- gt(data = hyp_rf)
+hyp_par_rf
+
+```
+Here are the best hyperparameters selected according to the best rmse. 
+
+
+```{r}
+best_rmse <- select_best(rf, "rmse")
+best_rmse
+
+final_rf <- finalize_model(
+  model_rf,
+  best_rmse
+)
+
+final_wf_rf <- workflow() %>%
+  add_recipe(SP_rec) %>%
+  add_model(final_rf)
+
+final_rf <- final_wf_rf %>%
+  last_fit(SP_split)
+
+
+```
+
+```{r, echo=FALSE}
+ res_rf <- final_rf %>%
+  collect_metrics()
+res_tune_rf  <- as.data.frame(res_rf)
+best_rmse_tune_rf <- res_tune_rf[1,3]
+
+
+res_tune_rf <- tribble( ~best_mtry, ~best_min_n, ~test_rmse,
+                        best_mtry_rf, best_mtry_min_n, best_rmse_tune_rf
+                
+)
+
+res_tune_rf
+
+gt_res_tune_rf <- gt(data = res_tune_rf)
+gt_res_tune_rf
+
+```
+
+
+
+The random forest is outperforming the results from the second part, the RMSE is better than the  Multi layer perceptron. (We see here above the test rmse after tuning)
+
+If we tune an XGboost model, will the performance be better?
+
+XGBoost means "Extreme Gradient Boosting", as well as for random forest, XGboost model is a tree based algorithm, it is an ensemble algorithm which work by boosting trees and use a gradient descent algorithm.
+
+What is the difference with a random forest? 
+
+- the combining process is different: it is starting at the beginning instead of at the end (on the contrary to random forest). In Random forest, the results are combined in the end of the process, while Gradient Boosting is doing it along the way.
+
+- XGBoost is a boosting algorithm, which tries to reduce bias. An XGboost model tries to correct the mistake made in the previous model.Using this approach we can hope that XGBoost improves the performance of our model.
+
+Our data set is big (32686 observations), which is ideal for an XGboost model. But there a lot of hyperparameter to tune which make it more complex than the random fores and more complicated to tune. 
+
+The hyperparameter we want to tune are tree_depth, loss_reduction, sample_size and the learn_rate.
+
+
+```{r}
+xgb <- boost_tree(
+  trees = 100, 
+  tree_depth = tune(), min_n = tune(), 
+  loss_reduction = tune(),                     
+  sample_size = tune(), mtry = tune(),        
+  learn_rate = tune(),                         
+) %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+xgb_wf <- workflow() %>%
+  add_recipe(SP_rec) %>%
+  add_model(xgb)
+
+
+```
+
+
+We use a big tune grid for all the hyper parameters.
+```{r, results='hide'}
+set.seed(uin)
+xgb_grid <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), SP_train),
+  learn_rate(),
+  size = 10
+)
+
+set.seed(uin)
+xgb_tune <- tune_grid(
+  xgb_wf,
+  resamples = nfl_folds,
+  grid = xgb_grid,
+  control = control_grid(save_pred = TRUE)
+)
+
+
+```
+
+
+
+
+```{r}
+
+xgb_tune %>%
+  collect_metrics() %>%
+  filter(.metric == "rmse") 
+
+```
+
+
+```{r, echo=FALSE}
+best_rmse_xgb <- select_best(xgb_tune, "rmse")
+
+hyp_tune_xgb  <- as.data.frame(best_rmse_xgb)
+best_mtry_tune_xgb <- hyp_tune_xgb[1,1]
+best_min_n_tune_xgb <- hyp_tune_xgb[1,2]
+best_tree_depth_tune_xgb <- hyp_tune_xgb[1,3]
+best_learn_rate_tune_xgb <- hyp_tune_xgb[1,4]
+best_loss_reduction_tune_xgb <- hyp_tune_xgb[1,5]
+best_sample_size_tune_xgb <- hyp_tune_xgb[1,6]
+
+
+res_tune_xgb <- tribble( ~best_mtry, ~best_min_n, ~best_tree_depth, ~best_learn_rate, ~best_loss_reduction, ~best_sample_size,
+                        best_mtry_tune_xgb, best_min_n_tune_xgb, best_tree_depth_tune_xgb, best_learn_rate_tune_xgb, best_loss_reduction_tune_xgb, best_sample_size_tune_xgb
+               
+                
+)
+
+gt_res_tune_xgb <- gt(data = res_tune_xgb)
+gt_res_tune_xgb
+
+
+
+```
+
+We see here the best parameters which we select according to the best rmse.
+We then compute these best values in a new workflow.
+
+```{r}
+final_xgb <- finalize_workflow(
+  xgb_wf,
+  best_rmse_xgb
+)
+
+final_xgb
+final_xgb_res <- last_fit(final_xgb, SP_split)
+
+collect_metrics(final_xgb_res)
+
+```
+
+
+
+
+
+```{r, echo=FALSE}
+
+res_xgb <- final_xgb_res %>%
+  collect_metrics()
+res_tune_xgb  <- as.data.frame(res_xgb)
+best_rmse_tune_xgb <- res_tune_xgb[1,3]
+
+
+res_tune_rfvsxgb <- tribble( ~model, ~rmse_test,
+                             "random_forest", best_rmse_tune_rf,
+                              "XGBoost", best_rmse_tune_xgb, 
+                
+)
+
+gt_res_tune_rfvsxgb <- gt(data = res_tune_rfvsxgb)
+gt_res_tune_rfvsxgb
+
+
+tbl_rmse <- tribble( ~model, ~RMSE_test, 
+                    "MLP relu",RMSE_test_relu, 
+                    "MLP softmax", RMSE_test_softmax,
+                    "lineare regression", RMSE_test_lm)
+
+ggplot(tbl_rmse, aes(x = model, y =RMSE_test)) +
+  geom_col(fill="lightcoral", color="lightcoral")
+
+
+```
+
+
+
+
+
+
+
+Tuning the XGBoost model is improving the performance of our model, the RMSE is than smaller, but just really marginally smaller. 
+I think Random forest is a better model for our data set, even if the performance of the XGBoost algorithm is slightly better. The random forest model is easy to interpret ( easier than the XGBoost one) and gives us good results.
+
+
+
+
+To conclude it was a challenging project, because the data set is extensive, which make for example difficult to train a neural net model with the neural net function ( there are too many weights).
+It was very interesting, because the dataset has been issued from the NASA, which make it attractive. 
+Our best model is I think the random forest one, beacause it is a good equilibrium between parsimony and performance.
+
+
+Main Sources:
+
+
+https://juliasilge.com/blog/sf-trees-random-tuning/
+https://juliasilge.com/blog/xgboost-tune-volleyball/
+https://stackoverflow.com/questions/16228954/how-to-use-mlp-multilayer-perceptron-in-r
+https://www.brodrigues.co/blog/2018-11-25-tidy_cv/
+https://community.rstudio.com/t/tidymodels-tunable-models-involving-10-fold-cross-validation-using-the-function-tune-grid-in-r/90754
+https://statistics.berkeley.edu/computing/r-t-tests
+https://stats.stackexchange.com/questions/344220/how-to-tune-hyperparameters-in-a-random-forest
+
+
+
